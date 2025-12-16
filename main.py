@@ -4,6 +4,22 @@ import time
 import yfinance as yf
 from datetime import datetime
 
+# --- INICIO DE DEPURACIÓN DE CLAVES ---
+print("🔍 DEPURACIÓN: Comprobando claves...")
+api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
+webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
+
+if api_key:
+    print(f"✅ Clave ALPHA_VANTAGE_API_KEY encontrada.")
+else:
+    print("❌ ERROR: La clave ALPHA_VANTAGE_API_KEY NO fue encontrada o está vacía.")
+
+if webhook_url:
+    print(f"✅ Clave DISCORD_WEBHOOK_URL encontrada.")
+else:
+    print("❌ ERROR: La clave DISCORD_WEBHOOK_URL NO fue encontrada o está vacía.")
+# --- FIN DE LA DEPURACIÓN ---
+
 # --- CONFIGURACIÓN ---
 ALPHA_VANTAGE_API_KEY = os.getenv('NY2BKAZONTRVMUEK')
 DISCORD_WEBHOOK_URL = os.getenv('https://discordapp.com/api/webhooks/1449729466933841921/ayyGZXy9o1Fuo4YGBWMwpBRjNnQ9NtgY63nxkapJXUDRLVlbdb_bugXQl5dt3Mi8j7Un')
