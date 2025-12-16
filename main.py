@@ -3,11 +3,12 @@ import os
 import time
 import yfinance as yf
 from datetime import datetime
-import pandas as pd # <-- ¡NUEVA IMPORTANCIA! Para manejar la lista de acciones
 
 # --- CONFIGURACIÓN ---
+# Claves de las APIs (añade la nueva clave de FMP a Render)
 ALPHA_VANTAGE_API_KEY = os.getenv('NY2BKAZONTRVMUEK')
 DISCORD_WEBHOOK_URL = os.getenv('https://discordapp.com/api/webhooks/1449729466933841921/ayyGZXy9o1Fuo4YGBWMwpBRjNnQ9NtgY63nxkapJXUDRLVlbdb_bugXQl5dt3Mi8j7Un')
+FMP_API_KEY = os.getenv('SJmx26Uz7cDFQcmCjVvydGUAdGb6gu59') # <-- ¡NUEVA CLAVE!
 
 # --- CONFIGURACIÓN DE LAS 5 ESTRATEGIAS ---
 UMBRAL_VOLUMEN = 500000
@@ -18,8 +19,6 @@ FACTOR_COMPRESION = 0.75
 FACTOR_VOLUMEN_ACUMULADO = 1.5
 
 # --- CONFIGURACIÓN DE HORARIO (HORA UTC) ---
-# 7:00 AM UTC = 8:00 AM en España (Apertura Europa)
-# 21:00 PM UTC = 4:00 PM en Nueva York (Cierre EE.UU.)
 HORA_INICIO = 7
 MINUTO_INICIO = 0
 HORA_FIN = 21
@@ -61,21 +60,50 @@ def enviar_alerta_discord(ticker, precio_actual, cambio_precio, porcentaje_cambi
     except requests.exceptions.RequestException as e:
         print(f"❌ Error al enviar alerta a Discord: {e}")
 
-def obtener_lista_completa_de_acciones():
-    """Carga una lista completa de tickers del mercado estadounidense."""
-    print("📚 Cargando lista completa de acciones del mercado NASDAQ...")
+def obtener_candidatos_dinamicos():
+    """
+    Realiza un barrido rápido para obtener una lista dinámica de acciones interesantes.
+    Combina los más activos, los que más suben y los que más bajan.
+    """
+    print("📡 Realizando barrido rápido para encontrar candidatos dinámicos...")
+    lista_combinada = set()
+    
+    # Obtenemos los más activos
     try:
-        # Usamos pandas_datareader para obtener la lista de tickers de NASDAQ
-        from pandas_datareader.nasdaq_trader import get_nasdaq_symbols
-        tickers = get_nasdaq_symbols()
-        print(f"✅ Se cargaron {len(tickers)} tickers de NASDAQ.")
-        return tickers
+        url_activos = f"https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey={FMP_API_KEY}"
+        response = requests.get(url_activos)
+        if response.status_code == 200:
+            data = response.json()
+            for stock in data:
+                lista_combinada.add(stock['ticker'])
     except Exception as e:
-        print(f"❌ No se pudo cargar la lista de NASDAQ. Error: {e}")
-        print("🔄 Intentando con una lista estática como respaldo...")
-        # Respaldo: una lista de acciones conocidas si lo anterior falla
-        tickers_respaldo = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'JNJ', 'V']
-        return tickers_respaldo
+        print(f"❌ Error al obtener gainers de FMP: {e}")
+
+    # Obtenemos los que más caen
+    try:
+        url_perdedores = f"https://financialmodelingprep.com/api/v3/stock_market/losers?apikey={FMP_API_KEY}"
+        response = requests.get(url_perdedores)
+        if response.status_code == 200:
+            data = response.json()
+            for stock in data:
+                lista_combinada.add(stock['ticker'])
+    except Exception as e:
+        print(f"❌ Error al obtener losers de FMP: {e}")
+
+    # Obtenemos los más activos (otro endpoint)
+    try:
+        url_activos = f"https://financialmodelingprep.com/api/v3/stock_market/actives?apikey={FMP_API_KEY}"
+        response = requests.get(url_activos)
+        if response.status_code == 200:
+            data = response.json()
+            for stock in data:
+                lista_combinada.add(stock['ticker'])
+    except Exception as e:
+        print(f"❌ Error al obtener actives de FMP: {e}")
+
+    lista_final = list(lista_combinada)
+    print(f"✅ Barrido completado. Se encontraron {len(lista_final)} candidatos dinámicos para analizar.")
+    return lista_final
 
 def analizar_ticker(ticker):
     """Realiza un análisis completo con las 5 estrategias."""
@@ -136,13 +164,14 @@ def analizar_ticker(ticker):
 
 # --- BUCLE PRINCIPAL ---
 if __name__ == "__main__":
-    print("🚀 Iniciando Explorador de Mercado Definitivo...")
+    print("🚀 Iniciando Explorador de Mercado Eficiente...")
     
     ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
     DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+    FMP_API_KEY = os.getenv('FMP_API_KEY')
 
-    if not ALPHA_VANTAGE_API_KEY or not DISCORD_WEBHOOK_URL:
-        print("ERROR: No has configurado tus claves en los Secrets de Replit.")
+    if not ALPHA_VANTAGE_API_KEY or not DISCORD_WEBHOOK_URL or not FMP_API_KEY:
+        print("ERROR: No has configurado todas las claves API en Render.")
     else:
         while True:
             ahora = datetime.now()
@@ -153,17 +182,17 @@ if __name__ == "__main__":
                 last_run_day = current_day
             if (ahora.hour >= HORA_INICIO and ahora.minute >= MINUTO_INICIO) and \
                (ahora.hour < HORA_FIN or (ahora.hour == HORA_FIN and ahora.minute <= MINUTO_FIN)):
-                print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado abierto. Explorando el mercado...")
-                lista_completa = obtener_lista_completa_de_acciones()
-                if not lista_completa:
-                    print("No se pudieron obtener acciones. Reintentando en 10 minutos.")
+                print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado abierto. Iniciando barrido y análisis...")
+                lista_candidatos = obtener_candidatos_dinamicos()
+                if not lista_candidatos:
+                    print("No se pudieron obtener candidatos. Reintentando en 10 minutos.")
                     time.sleep(600)
                 else:
-                    print(f"Analizando {len(lista_completa)} acciones. Esto puede tardar un tiempo...")
-                    for ticker in lista_completa:
+                    print(f"Analizando a los {len(lista_candidatos)} candidatos más prometedores del día...")
+                    for ticker in lista_candidatos:
                         analizar_ticker(ticker)
                         time.sleep(12) # Pausa para no superar el límite de la API
-                    print("\n🏁 Análisis completo del mercado finalizado.")
+                    print("\n🏁 Análisis del ciclo finalizado.")
             else:
                 print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado cerrado. Durmiendo...")
                 time.sleep(600)
