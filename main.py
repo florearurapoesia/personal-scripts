@@ -3,61 +3,27 @@ import os
 import time
 import yfinance as yf
 from datetime import datetime
-
-# --- INICIO DE DEPURACIÓN DE CLAVES ---
-print("🔍 DEPURACIÓN: Comprobando claves...")
-api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
-webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
-
-if api_key:
-    print(f"✅ Clave ALPHA_VANTAGE_API_KEY encontrada.")
-else:
-    print("❌ ERROR: La clave ALPHA_VANTAGE_API_KEY NO fue encontrada o está vacía.")
-
-if webhook_url:
-    print(f"✅ Clave DISCORD_WEBHOOK_URL encontrada.")
-else:
-    print("❌ ERROR: La clave DISCORD_WEBHOOK_URL NO fue encontrada o está vacía.")
-# --- FIN DE LA DEPURACIÓN ---
+import pandas as pd # <-- ¡NUEVA IMPORTANCIA! Para manejar la lista de acciones
 
 # --- CONFIGURACIÓN ---
 ALPHA_VANTAGE_API_KEY = os.getenv('NY2BKAZONTRVMUEK')
 DISCORD_WEBHOOK_URL = os.getenv('https://discordapp.com/api/webhooks/1449729466933841921/ayyGZXy9o1Fuo4YGBWMwpBRjNnQ9NtgY63nxkapJXUDRLVlbdb_bugXQl5dt3Mi8j7Un')
 
-# --- CONFIGURACIÓN DE TODAS LAS ESTRATEGIAS ---
-# 1. Para Detección de Ballenas y Rompes
-UMBRAL_VOLUMEN = 500000  # 500 mil acciones
-PERIODO_RESISTENCIA = 90 # Días para calcular la resistencia
+# --- CONFIGURACIÓN DE LAS 5 ESTRATEGIAS ---
+UMBRAL_VOLUMEN = 500000
+PERIODO_RESISTENCIA = 90
+FACTOR_MEDIA_ALCISTA = 1.05
+FACTOR_MEDIA_BAJISTA = 0.95
+FACTOR_COMPRESION = 0.75
+FACTOR_VOLUMEN_ACUMULADO = 1.5
 
-# 2. Para Análisis de Patrón (Barbacoa/Incendio)
-FACTOR_MEDIA_ALCISTA = 1.05 # Precio 5% por encima de su media
-FACTOR_MEDIA_BAJISTA = 0.95 # Precio 5% por debajo de su media
-
-# 3. Para Detección Anticipatoria (Compresión/Acumulación)
-FACTOR_COMPRESION = 0.75 # El rango de 10d debe ser menor al 75% del rango de 50d
-FACTOR_VOLUMEN_ACUMULADO = 1.5 # El volumen de 3d debe ser 1.5x mayor que el de los 20d previos
-
-# --- ¡NUEVO! TU LISTA DE EXPLORACIÓN ---
-# Añade aquí acciones de otros sectores, mid-caps, o cualquier ticker que te interese.
-# El bot analizará estas además de las más populares del día.
-MI_LISTA_ADICIONAL = [
-    "PLTR", # Ejemplo: Tecnología / Defensa
-    "GME",  # Ejemplo: Retail / Meme stock
-    "COIN", # Ejemplo: Cripto
-    "RIVN", # Ejemplo: Vehículos eléctricos
-    "AFRM", # Ejemplo: Fintech
-    "SOFI", # Ejemplo: Banca digital
-    # Añade todas las que quieras aquí...
-]
-
-# --- CONFIGURACIÓN DE HORARIO (AHORA EN HORA UTC DEL SERVIDOR) ---
-# ¡IMPORTANTE! Estas horas son en UTC (hora de Londres), no en hora de España.
+# --- CONFIGURACIÓN DE HORARIO (HORA UTC) ---
 # 7:00 AM UTC = 8:00 AM en España (Apertura Europa)
 # 21:00 PM UTC = 4:00 PM en Nueva York (Cierre EE.UU.)
-HORA_INICIO = 7    # <-- ¡CAMBIO! Ahora empieza a las 7:00 AM UTC
-MINUTO_INICIO = 0  # <-- ¡CAMBIO!
-HORA_FIN = 21      # <-- ¡CAMBIO! Ahora termina a las 21:00 PM UTC
-MINUTO_FIN = 1     # <-- ¡CAMBIO!
+HORA_INICIO = 7
+MINUTO_INICIO = 0
+HORA_FIN = 21
+MINUTO_FIN = 1
 
 # --- MEMORIA DEL RASTREADOR ---
 alerted_today = set()
@@ -67,7 +33,7 @@ last_run_day = None
 
 def enviar_alerta_discord(ticker, precio_actual, cambio_precio, porcentaje_cambio, volumen_actual, volumen_promedio, ratio, resistencia, media_movil_20d, rango_10d, rango_50d, vol_3d, vol_20d_previos, señales_encontradas):
     """Envía una súper-alerta con toda la información de las 5 estrategias."""
-    print(f"🚀 ¡SÚPER ALERTA DEFINITIVA! Enviando análisis completo para {ticker}...")
+    print(f"🚀 ¡SÚPER ALERTA! Enviando análisis para {ticker}...")
     
     titulo = f"🤖 **ANÁLISIS COMPLETO: {ticker}** 🤖"
     if len(señales_encontradas) > 1:
@@ -80,49 +46,36 @@ def enviar_alerta_discord(ticker, precio_actual, cambio_precio, porcentaje_cambi
                 f"🔥 **Ratio Volumen:** {ratio:.2f}x\n" \
                 f"🧱 **Resistencia:** {resistencia:.2f}\n" \
                 f"📈 **Media 20d:** {media_movil_20d:.2f}\n\n" \
-                f"--- **ANÁLISIS ANTICIPATORIO** ---\n" \
-                f"📉 **Rango 10d:** {rango_10d:.2f} (vs Rango 50d: {rango_50d:.2f})\n" \
-                f"📊 **Volumen 3d:** {vol_3d:,.0f} (vs Vol. previo: {vol_20d_previos:,.0f})\n\n" \
                 f"--- **SEÑALES DETECTADAS** ---\n" \
                 f"➡️ {', '.join(señales_encontradas)}"
 
     datos = {
-        "username": "Market Monitor", # Puedes cambiar este nombre para más discreción
+        "username": "Market Monitor",
         "content": contenido
     }
 
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=datos)
         response.raise_for_status()
-        print(f"✅ Súper-alerta definitiva enviada para {ticker}")
+        print(f"✅ Alerta enviada para {ticker}")
     except requests.exceptions.RequestException as e:
         print(f"❌ Error al enviar alerta a Discord: {e}")
 
-def obtener_candidatos_variados():
-    """Obtiene candidatos de dos fuentes: la lista de Alpha Vantage y tu lista personal."""
-    print("📡 Obteniendo lista variada de candidatos...")
-    candidatos_unicos = set()
-    
-    # Fuente 1: Lista de Alpha Vantage
-    url = f"https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey={ALPHA_VANTAGE_API_KEY}"
+def obtener_lista_completa_de_acciones():
+    """Carga una lista completa de tickers del mercado estadounidense."""
+    print("📚 Cargando lista completa de acciones del mercado NASDAQ...")
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        for categoria in ['most_actively_traded', 'top_gainers', 'top_losers']:
-            if categoria in data:
-                for item in data[categoria]:
-                    candidatos_unicos.add(item['ticker'])
+        # Usamos pandas_datareader para obtener la lista de tickers de NASDAQ
+        from pandas_datareader.nasdaq_trader import get_nasdaq_symbols
+        tickers = get_nasdaq_symbols()
+        print(f"✅ Se cargaron {len(tickers)} tickers de NASDAQ.")
+        return tickers
     except Exception as e:
-        print(f"❌ No se pudo obtener la lista de Alpha Vantage: {e}")
-
-    # Fuente 2: Tu lista personal
-    for ticker in MI_LISTA_ADICIONAL:
-        candidatos_unicos.add(ticker)
-
-    lista_final = list(candidatos_unicos)
-    print(f"✅ Se encontraron {len(lista_final)} candidatos únicos para analizar.")
-    return lista_final
+        print(f"❌ No se pudo cargar la lista de NASDAQ. Error: {e}")
+        print("🔄 Intentando con una lista estática como respaldo...")
+        # Respaldo: una lista de acciones conocidas si lo anterior falla
+        tickers_respaldo = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'JNJ', 'V']
+        return tickers_respaldo
 
 def analizar_ticker(ticker):
     """Realiza un análisis completo con las 5 estrategias."""
@@ -131,7 +84,7 @@ def analizar_ticker(ticker):
         return
 
     try:
-        print(f"🔍 Análisis Definitivo 5 en 1 para {ticker}...")
+        print(f"🔍 Analizando {ticker}...")
         
         stock_data = yf.Ticker(ticker)
         hist = stock_data.history(period="65d", interval="1d")
@@ -162,7 +115,6 @@ def analizar_ticker(ticker):
         if volumen_actual > UMBRAL_VOLUMEN:
             señales_encontradas.append("🔥 Pico de Volumen Anormal")
         
-        # --- Texto resaltado con Markdown ---
         if precio_actual > media_movil_20d * FACTOR_MEDIA_ALCISTA:
             señales_encontradas.append("🍖 Patrón de '**Barbacoa**' (Cierre de Ganancias)")
         elif precio_actual < media_movil_20d * FACTOR_MEDIA_BAJISTA:
@@ -176,7 +128,6 @@ def analizar_ticker(ticker):
         if señales_encontradas:
             print(f"   - 🎯 ¡SEÑAL(ES) ENCONTRADA(S) en {ticker}!")
             print(f"      -> {', '.join(señales_encontradas)}")
-            print("-" * 40)
             enviar_alerta_discord(ticker, precio_actual, cambio_precio_str, porcentaje_cambio_str, volumen_actual, volumen_promedio, ratio_volumen, resistencia, media_movil_20d, rango_10d, rango_50d, vol_3d, vol_20d_previos, señales_encontradas)
             alerted_today.add(ticker)
 
@@ -185,12 +136,15 @@ def analizar_ticker(ticker):
 
 # --- BUCLE PRINCIPAL ---
 if __name__ == "__main__":
-    print("🚀 Iniciando Analista Definitivo 5 en 1 (Versión Final)...")
+    print("🚀 Iniciando Explorador de Mercado Definitivo...")
+    
+    ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
+    DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+
     if not ALPHA_VANTAGE_API_KEY or not DISCORD_WEBHOOK_URL:
         print("ERROR: No has configurado tus claves en los Secrets de Replit.")
     else:
         while True:
-            # Usamos datetime.now() que nos dará la hora del servidor (UTC)
             ahora = datetime.now()
             current_day = ahora.day
             if last_run_day != current_day:
@@ -199,14 +153,17 @@ if __name__ == "__main__":
                 last_run_day = current_day
             if (ahora.hour >= HORA_INICIO and ahora.minute >= MINUTO_INICIO) and \
                (ahora.hour < HORA_FIN or (ahora.hour == HORA_FIN and ahora.minute <= MINUTO_FIN)):
-                print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado abierto. Ejecutando análisis completo...")
-                candidatos = obtener_candidatos_variados()
-                if not candidatos:
-                    time.sleep(300)
+                print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado abierto. Explorando el mercado...")
+                lista_completa = obtener_lista_completa_de_acciones()
+                if not lista_completa:
+                    print("No se pudieron obtener acciones. Reintentando en 10 minutos.")
+                    time.sleep(600)
                 else:
-                    for ticker in candidatos:
+                    print(f"Analizando {len(lista_completa)} acciones. Esto puede tardar un tiempo...")
+                    for ticker in lista_completa:
                         analizar_ticker(ticker)
-                        time.sleep(12) 
+                        time.sleep(12) # Pausa para no superar el límite de la API
+                    print("\n🏁 Análisis completo del mercado finalizado.")
             else:
                 print(f"\n{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC - Mercado cerrado. Durmiendo...")
                 time.sleep(600)
